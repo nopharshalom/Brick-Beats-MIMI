@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+.env
+# session data (participants' sessions: keep off GitHub)
+logs/
+captures/
+session_summary.csv
+# generated
+tts_cache/
+markers/
+calib_*.jpg
+last_notes.wav
+last_speech.wav

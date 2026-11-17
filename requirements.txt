@@ -1,0 +1,7 @@
+numpy
+opencv-python>=4.8  # cv2.aruco.ArucoDetector
+openai
+python-dotenv
+reachy-mini==1.11.0  # match the robot's daemon version (same as Lab 3)
+pyttsx3; sys_platform != "win32"
+comtypes; sys_platform == "win32"  # laptop voice fallback (Windows SAPI)
