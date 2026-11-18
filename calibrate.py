@@ -7,7 +7,7 @@
     python calibrate.py test --image photo.jpg   # same, offline from a photo
 
 Calibration staircase for `colors`: put one SHORT (1x2) brick of each color in its own lane, lane i at
-beat i+1 of the plate (low C red on beat 1, D orange on beat 2, ... high C pink on beat 8).
+beat i+1 of the plate (low C red on beat 1, D orange on beat 2, ... high C black on beat 8).
 Tune READ_PITCH / LISTEN_PITCH / GRID_* / PLAY_SLOT_STUDS in mimi/config.py until the outputs look right.
 """
 
@@ -56,7 +56,7 @@ def main():
             if warped is not None:
                 read = reader.read(frame, list(range(C.MEASURES)))
                 cv2.imwrite("calib_rectified.jpg", annotate(warped, read.notes))
-                print("baton in PLAY slot:", read.baton)
+                print("brick (baton) in PLAY slot:", read.baton)
                 print("saved calib_raw.jpg and calib_rectified.jpg: grid lines must sit on the stud rows")
 
         elif args.what == "colors":
@@ -69,8 +69,12 @@ def main():
                 top = C.GRID_Y0 + (len(C.PITCHES) - 1 - lane) * C.STUDS_PER_LANE
                 value = reader._patch(hsv, C.GRID_X0 + lane, top, 1, C.STUDS_PER_LANE)
                 colors[name] = [int(v) for v in value]
-                print(f"  {name:7s} lane {C.PITCHES[lane]}: HSV {colors[name]}")
-            hues = sorted((v[0], k) for k, v in colors.items())
+                print(f"  {name:11s} lane {C.PITCHES[lane]}: HSV {colors[name]}")
+                if name != "black" and colors[name][2] < C.BLACK_MAX_VALUE + 20:
+                    print(f"    <- {name} is almost as dark as black: add light, or it may be read as black")
+            if "black" in colors and colors["black"][2] >= C.BLACK_MAX_VALUE:
+                print(f"  <- black reads too bright (value {colors['black'][2]}): lower the lamp glare or raise BLACK_MAX_VALUE")
+            hues = sorted((v[0], k) for k, v in colors.items() if k != "black")  # black has no hue
             gaps = [(min(abs(a[0] - b[0]), 180 - abs(a[0] - b[0])), a[1], b[1]) for a, b in zip(hues, hues[1:] + hues[:1])]
             closest = min(gaps)
             print(f"closest pair: {closest[1]} / {closest[2]} ({closest[0]} hue units apart)"

@@ -10,6 +10,13 @@ The LLM/VLM setup (Ollama by default, OpenAI with `--api`) is the same as
 in Lab 3: perception and feedback choice are deterministic, the **VLM** only gives a second opinion on
 low-confidence plate reads, and the **LLM** only words the short hint after a mismatch.
 
+![Fig. 1: top-down setting and plate-as-staff mapping](docs/fig1_setting_and_staff.png)
+
+Pitches from low C to high C are red, orange, yellow, light green, dark green, light blue, dark blue and
+black. The baton is **any brick** placed in the PLAY slot. A to-scale build sheet of the plate (markers,
+grid, PLAY slot) is in [docs/plate_layout.png](docs/plate_layout.png). Both figures are drawn from
+`mimi/config.py` by `python tools/make_figures.py`, which also saves PDFs for Overleaf.
+
 ## How the code matches the proposal (Section 4, Fig. 2)
 
 | Proposal | Code |

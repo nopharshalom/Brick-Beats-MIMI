@@ -1,7 +1,7 @@
 """Draw a synthetic, perspective-distorted photo of the plate (markers + bricks) for testing the
 plate reader and --dry-run without the robot or real bricks.
 
-    python tools/make_test_plate.py "E1 D1 C2 | C1 D1 E1 F1 | G1 E1 C2 | G4" test_plate.jpg --baton
+    python tools/make_test_plate.py "E1 D1 C2 | C1 D1 E1 F1 | G1 E1 C2 | G4" test_plate.jpg --baton orange
 
 Measures are separated by '|' (tutorial | round 1 | round 2 | round 3), wizard note format (R = rest).
 """
@@ -23,7 +23,7 @@ def hsv_to_bgr(hsv):
     return tuple(int(v) for v in cv2.cvtColor(np.uint8([[hsv]]), cv2.COLOR_HSV2BGR)[0, 0])
 
 
-def render(measures_text, baton=False):
+def render(measures_text, baton=None):
     side = (C.PLATE_STUDS + 2 * C.CANVAS_MARGIN_STUDS) * C.PX_PER_STUD
     img = np.full((side, side, 3), 200, np.uint8)  # table
     p = C.PX_PER_STUD
@@ -47,7 +47,7 @@ def render(measures_text, baton=False):
     if baton:
         x, y, w, h = C.PLAY_SLOT_STUDS
         bx, by = (int(v) for v in stud_to_px(x, y))
-        cv2.rectangle(img, (bx, by), (bx + int(w * p), by + int(h * p)), (25, 25, 25), -1)
+        cv2.rectangle(img, (bx, by), (bx + int(w * p), by + int(h * p)), hsv_to_bgr(DEFAULT_COLORS[baton]), -1)
     # seen from MIMI's side: upside down and in perspective
     img = cv2.rotate(img, cv2.ROTATE_180)
     src = np.float32([[0, 0], [side, 0], [side, side], [0, side]])
@@ -61,7 +61,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("notes")
     parser.add_argument("out")
-    parser.add_argument("--baton", action="store_true")
+    parser.add_argument("--baton", nargs="?", const="orange", choices=list(DEFAULT_COLORS),
+                        help="put a brick of this color (default orange) in the PLAY slot")
     args = parser.parse_args()
     cv2.imwrite(args.out, render(args.notes, args.baton))
     print("saved", args.out)

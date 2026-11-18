@@ -6,7 +6,7 @@
     4. confidence = share of cells in the measures we care about that were read cleanly
     5. low confidence -> the VLM gets the rectified, labelled plate for a second opinion
 
-Also: is the baton brick in the PLAY slot, and is a hand in the way (markers hidden or the image moving).
+Also: is the baton (any brick) in the PLAY slot, and is a hand in the way (markers hidden or the image moving).
 """
 
 import json
@@ -24,10 +24,10 @@ CALIBRATION_FILE = "calibration.json"
 
 # OpenCV HSV (H 0-179). Overwritten by calibrate.py --colors under the event lighting.
 DEFAULT_COLORS = {
-    "red": (0, 200, 170), "orange": (11, 220, 220), "yellow": (26, 210, 230), "lime": (40, 190, 200),
-    "green": (65, 200, 140), "azure": (100, 180, 210), "purple": (135, 120, 140), "pink": (165, 110, 230),
+    "red": (0, 200, 170), "orange": (11, 220, 220), "yellow": (26, 210, 230), "light green": (40, 190, 200),
+    "dark green": (65, 200, 120), "light blue": (100, 180, 210), "dark blue": (112, 200, 120), "black": (0, 0, 30),
 }
-EMPTY, BLACK, UNKNOWN = "empty", "black", "unknown"
+EMPTY, DARK, UNKNOWN = "empty", "dark", "unknown"  # DARK = very dark cell when black is not a pitch
 
 
 @dataclass
@@ -104,14 +104,18 @@ class PlateReader:
         return np.median(region, axis=0) if len(region) else np.zeros(3)
 
     def classify(self, hsv_value):
-        """(label, distance) for one cell. Distance is 0 for clear empty/black cells."""
+        """(label, distance) for one cell. Distance is 0 for clear empty/black cells.
+        Very dark cells have no reliable hue: they are the "black" pitch if black is a lane color,
+        otherwise DARK (not a note)."""
         h, s, v = (float(c) for c in hsv_value)
-        if v < 60:
-            return BLACK, 0.0
+        if v < C.BLACK_MAX_VALUE:
+            return ("black" if "black" in C.LANE_COLORS else DARK), 0.0
         if s < C.CELL_MIN_COLOR_SAT:
             return EMPTY, 0.0
         best, best_d = UNKNOWN, 1e9
         for name, (ch, cs, cv) in self.colors.items():
+            if name == "black":  # matched by brightness above, not by hue
+                continue
             dh = min(abs(h - ch), 180 - abs(h - ch))
             d = (4.0 * dh ** 2 + 0.15 * (s - cs) ** 2 + 0.05 * (v - cv) ** 2) ** 0.5
             if d < best_d:
@@ -138,7 +142,7 @@ class PlateReader:
                     continue
                 label = colored[0]
                 # a real brick fills the whole 2-stud lane with one color
-                bad[lane][col] = len(colored) != len(rows) or len(set(rows)) > 1 or label in (UNKNOWN, BLACK)
+                bad[lane][col] = len(colored) != len(rows) or len(set(rows)) > 1 or label in (UNKNOWN, DARK)
                 labels[lane][col] = label
         return labels, bad
 
@@ -162,7 +166,7 @@ class PlateReader:
                         end += 1
                         checked.add((lane, end))
                     length = end - col + 1
-                    if row[col] != C.LANE_COLORS[lane] and row[col] not in (UNKNOWN, BLACK):
+                    if row[col] != C.LANE_COLORS[lane] and row[col] not in (UNKNOWN, DARK):
                         issues.append(f"{row[col]} brick in the {C.PITCHES[lane]} lane at beat {col - lo + 1}")
                         for c in range(col, end + 1):
                             bad[lane][c] = True
@@ -188,13 +192,16 @@ class PlateReader:
         return sorted(set(notes)), max(0.0, clean), sorted(set(issues))
 
     def baton_in_slot(self, warped):
+        """Any brick counts as the baton: the slot is "full" when most of it is colored or dark,
+        unlike the empty white/light-gray slot outline."""
         x, y, w, h = C.PLAY_SLOT_STUDS
         x0, y0 = (int(v) for v in stud_to_px(x, y))
         x1, y1 = (int(v) for v in stud_to_px(x + w, y + h))
         region = cv2.cvtColor(warped[y0:y1, x0:x1], cv2.COLOR_BGR2HSV)
         if region.size == 0:
             return False
-        return float((region[..., 2] < 60).mean()) >= C.BATON_DARK_FRACTION
+        filled = (region[..., 1] >= C.CELL_MIN_COLOR_SAT) | (region[..., 2] < C.BLACK_MAX_VALUE)
+        return float(filled.mean()) >= C.BATON_FILL_FRACTION
 
     # ------------------------------------------------------------ public
 

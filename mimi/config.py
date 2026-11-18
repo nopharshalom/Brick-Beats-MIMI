@@ -21,7 +21,7 @@ REPLAY_TARGET_AFTER_MISMATCH = True  # play MIMI's melody once more after a mism
 PITCHES = ["C4", "D4", "E4", "F4", "G4", "A4", "B4", "C5"]
 PITCH_WORDS = ["low C", "D", "E", "F", "G", "A", "B", "high C"]  # how MIMI says them
 # Brick color per lane (the vision pipeline and the students both use it).
-LANE_COLORS = ["red", "orange", "yellow", "lime", "green", "azure", "purple", "pink"]
+LANE_COLORS = ["red", "orange", "yellow", "light green", "dark green", "light blue", "dark blue", "black"]
 BEATS_PER_MEASURE = 4
 MEASURES = 4               # tutorial + 3 Echo rounds, kept on the plate for the finale
 DURATION_WORDS = {1: "quarter", 2: "half", 4: "whole"}
@@ -64,13 +64,16 @@ CANVAS_MARGIN_STUDS = 6
 GRID_X0, GRID_Y0 = 8, 8
 STUDS_PER_BEAT = 1
 STUDS_PER_LANE = 2
-# PLAY slot where the conductor puts the black baton brick: (x, y, w, h) in studs, may be off the plate.
+# PLAY slot where the conductor puts the baton: (x, y, w, h) in studs, may be off the plate.
+# The baton can be ANY brick (black is a pitch color): mark the slot with an outline of white or light-gray
+# tape only, never filled with colored tape, so an empty slot reads as empty.
 PLAY_SLOT_STUDS = (35.5, 14, 2, 4)
-BATON_DARK_FRACTION = 0.5  # fraction of PLAY-slot pixels that must be black to count as "baton in"
+BATON_FILL_FRACTION = 0.5  # share of PLAY-slot pixels that must be colored or dark to count as "baton in"
 
 # ---------------------------------------------------------------- vision thresholds
 MOTION_PIXEL_FRACTION = 0.02  # share of plate pixels changing between two frames = a hand is moving over it
 CELL_MIN_COLOR_SAT = 70     # below this saturation a cell is white baseplate (empty)
+BLACK_MAX_VALUE = 60        # darker than this (HSV value) = a black brick; dark blue must stay above it
 CELL_MAX_COLOR_DIST = 40.0  # farther than this from every calibrated color = unknown cell
 FRAMES_THAT_MUST_AGREE = 2
 

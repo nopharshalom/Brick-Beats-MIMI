@@ -1,7 +1,7 @@
 """Wizard-of-Oz keyboard (proposal 4.3). Runs in its own thread; the FSM polls the queue.
 
 Type a key and press Enter in the terminal:
-    p   play request (same as the baton: use if the baton is not detected)
+    p   play request (same as the baton brick: use if the baton is not detected)
     c   correct a misread plate: then type the active measure's notes, e.g.  E1 D1 C2   (R = rest beat)
     x   mark the last plate read as WRONG (no correction) - for read accuracy
     r   repeat the last instruction
