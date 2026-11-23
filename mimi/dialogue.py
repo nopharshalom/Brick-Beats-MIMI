@@ -25,11 +25,12 @@ SCRIPT = {
     "intro_1": "This plate is our score. Each row is a note. Up is higher!",
     "intro_2": "A longer brick is a longer note. Short brick, one beat. Long brick, four beats.",
     "intro_3": "Each seat owns one beat. Seat one has beat one, and so on.",
-    "tutorial_start": "Let's practice together, one brick at a time.",
+    "tutorial_start": "Let's practice under the Tutorial sign, one brick at a time.",
     "tutorial_done": "Bravo! Listen to what you built.",
     "round_intro": "Round {n}! Listen to my melody. I will play it two times.",
     "round_again": "One more time!",
-    "round_build": "Now build it! Conductor, place the baton when you are ready.",
+    "round_build": "Now build it under the Round {n} sign! Conductor, place the baton when ready.",
+    "wrong_section": "I see bricks in another spot. Round {n} goes under the Round {n} sign.",
     "conductor": "Seat {seat}, you are the conductor this round.",
     "reading": "Let me read the score.",
     "hands": "Hands off the score, please, so I can read it.",
@@ -63,11 +64,27 @@ def line(key, **kwargs):
     return SCRIPT[key].format(**kwargs)
 
 
+LENGTH_WORDS = {1: "", 2: "long ", 3: "longer ", 4: "very long "}  # brick length, said before the color
+
+
+def color_hint(target, round_number):
+    """The fading hint for a round (config COLOR_HINTS): every brick's color, the first one, or nothing."""
+    level = C.COLOR_HINTS.get(round_number, "none")
+    notes = sorted(target)
+    if level == "all" and notes:
+        bricks = [LENGTH_WORDS.get(n.beats, "") + C.LANE_COLORS[n.lane] for n in notes]
+        return "The bricks are " + ", ".join(bricks[:-1]) + (" and " if len(bricks) > 1 else "") + bricks[-1] + "."
+    if level == "first" and notes:
+        first = notes[0]
+        return f"It starts with a {LENGTH_WORDS.get(first.beats, '')}{C.LANE_COLORS[first.lane]} brick."
+    return None
+
+
 def all_scripted_lines():
     """Every fixed sentence MIMI can say, filled in for all seats/beats/rounds (for prerender_tts.py)."""
     from .music import melody
     lines = [v for v in SCRIPT.values() if "{" not in v]
-    lines += [line("round_intro", n=n) for n in (1, 2, 3)]
+    lines += [line(key, n=n) for key in ("round_intro", "round_build", "wrong_section") for n in (1, 2, 3)]
     lines += [line("conductor", seat=s) for s in (1, 2, 3, 4)]
     lines += [line("mismatch_directed", seat=b, beat=b) for b in (1, 2, 3, 4)]
     lines += [line("playbacks_left", left=k, s="" if k == 1 else "s") for k in (1, 2)]
@@ -81,6 +98,11 @@ def all_scripted_lines():
     for i, note in enumerate(melody(C.TUTORIAL_MELODY)):
         lines.append(TUTORIAL_STEPS[i].format(color=C.LANE_COLORS[note.lane], pitch=C.PITCH_WORDS[note.lane]))
     lines += template_hints_all()
+    for round_number, bank in C.MELODY_BANK.items():
+        for tune in bank:
+            hint = color_hint(melody(tune, round_number), round_number)
+            if hint:
+                lines.append(hint)
     return sorted(set(lines))
 
 

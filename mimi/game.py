@@ -11,7 +11,7 @@ import random
 import time
 
 from . import config as C
-from .dialogue import TUTORIAL_STEPS, PendingHint, line
+from .dialogue import TUTORIAL_STEPS, PendingHint, color_hint, line
 from .music import compare, in_measure, melody, parse_wizard_notes, synthesize, to_text
 from .plate_reader import PlateRead, PlateReader, annotate, vlm_second_opinion
 from .robot import Body, Speaker, connect
@@ -214,9 +214,13 @@ class Game:
         self.body.look_at_seat(conductor)
         self.say(line("conductor", seat=conductor))
         self.play(target, [measure], "target 1")
+        hint = color_hint(target, n)  # fading support: all colors, then the first color, then by ear
+        if hint:
+            self.log.event("color_hint", text=hint, level=C.COLOR_HINTS.get(n, "none"))
+            self.say(hint)
         self.say(line("round_again"), remember=False)
         self.play(target, [measure], "target 2")
-        self.say(line("round_build"))
+        self.say(line("round_build", n=n))
 
         playbacks, build_time, warned, diff = 0, 0.0, False, None
         while True:
@@ -254,10 +258,21 @@ class Game:
             # READ_PLATE
             self.log.transition("READ_PLATE")
             result = self.wizard_read(trigger[1], measure, time.time()) if trigger[0] == "c" \
-                else self.read_plate(list(range(measure + 1)), active=measure)
+                else self.read_plate(list(range(C.MEASURES)), active=measure)
             if result is None:
                 continue  # not counted as a playback; Wizard can correct with 'c'
             built = in_measure(result.notes, measure)
+            if not built:
+                # new bricks in another section (e.g. built over the tutorial): say where this round goes,
+                # without using up one of the team's playbacks
+                known = {note for m, notes in self.plate.items() if m != measure for note in notes}
+                stray = [note for note in result.notes
+                         if note.start // C.BEATS_PER_MEASURE != measure and note not in known]
+                if stray:
+                    self.log.event("wrong_section", notes=to_text(stray))
+                    self.body.look_at_group()
+                    self.say(line("wrong_section", n=n))
+                    continue
             self.plate[measure] = built
 
             # COMPARE (start the LLM hint now so it is ready after the playback)

@@ -15,6 +15,9 @@ READ_CONFIDENCE_MIN = 0.80  # below this, the plate read goes to the VLM for a s
 LLM_TIMEOUT_S = 2.0        # hint must arrive within this, else the template fallback is said
 STARS_TO_WIN = 2           # of 3 rounds -> "Orchestra Graduates"
 REPLAY_TARGET_AFTER_MISMATCH = True  # play MIMI's melody once more after a mismatch (LO3: compare by ear)
+# Fading color hints, said after the first playback of MIMI's melody, so pure listening is the last step:
+#   "all"   every brick's color (and "long" for longer notes), "first"  only the first brick, "none"  by ear
+COLOR_HINTS = {1: "all", 2: "first", 3: "none"}
 
 # ---------------------------------------------------------------- music
 # Pitch lanes from the bottom of the plate (lane 0) to the top (lane 7). Fig. 1b.
@@ -58,9 +61,11 @@ PLATE_STUDS = 32
 # ArUco DICT_4X4_50 ids 0-3, glued at the plate corners. Value = marker CENTER in stud coordinates.
 # 0 = top-left, 1 = top-right, 2 = bottom-right, 3 = bottom-left (students' view; MIMI sits at the top).
 ARUCO_DICT = "DICT_4X4_50"
-MARKER_CENTERS_STUDS = {0: (-2.5, -2.5), 1: (34.5, -2.5), 2: (34.5, 34.5), 3: (-2.5, 34.5)}
+# Planned: 2.5 studs (20 mm) out from each corner. These values are MEASURED from the current table setup
+# (calib_raw.jpg, 2026-11-23, plate on the white board); if the markers are moved, measure again.
+MARKER_CENTERS_STUDS = {0: (-3.39, -3.77), 1: (35.37, -3.77), 2: (35.37, 35.66), 3: (-3.39, 35.66)}
 # Warped canvas: the plate plus a margin so the markers and the PLAY slot fit.
-CANVAS_MARGIN_STUDS = 6
+CANVAS_MARGIN_STUDS = 8
 # Note grid: beat 1 of measure 1 starts at GRID_X0, the top of the high-C lane at GRID_Y0.
 # 4 measures x 4 beats = 16 beat columns, 1 stud per beat; 8 lanes x 1 stud = 8 stud rows (bricks are 1 stud wide).
 # The default centers the 16 x 8 grid on the 32 x 32 plate.
@@ -70,13 +75,24 @@ STUDS_PER_LANE = 1
 # PLAY slot where the conductor puts the baton: (x, y, w, h) in studs, may be off the plate.
 # The baton can be ANY brick (black is a pitch color): mark the slot with an outline of white or light-gray
 # tape only, never filled with colored tape, so an empty slot reads as empty.
-PLAY_SLOT_STUDS = (35.5, 14, 1, 4)  # fits a 1x4 brick (best baton); a 1x2 also counts
-BATON_FILL_FRACTION = 0.5  # share of PLAY-slot pixels that must be colored or dark to count as "baton in"
+PLAY_SLOT_STUDS = (33.75, 13.25, 2.4, 6.0)  # measured: the black pad right of the plate on the current table
+BATON_FILL_FRACTION = 0.5  # light slot: share of pixels that must be colored or dark to count as "baton in"
+# The current setup has a BLACK pad as the PLAY slot. Then the baton is any colored (not black) brick
+# placed on the pad, and this share of the pad must be colored. Set False for a white-outline slot.
+PLAY_SLOT_BLACK_PAD = True
+BATON_ON_PAD_FRACTION = 0.2
 
 # ---------------------------------------------------------------- vision thresholds
 MOTION_PIXEL_FRACTION = 0.02  # share of plate pixels changing between two frames = a hand is moving over it
 CELL_MIN_COLOR_SAT = 70     # below this saturation a cell is white baseplate (empty)
-BLACK_MAX_VALUE = 60        # darker than this (HSV value) = a black brick; dark blue must stay above it
+# The camera sees the bricks at an angle, so each brick's side spills over the cells beyond it in the
+# flattened image (~2 studs with the webcam set up on 2026-11-23). The reader scans each beat column for
+# color runs: the run's end nearest the camera is the brick's cell, and its far end is the brick's top
+# (used for the color). CAMERA_SIDE is where the camera is in the students' view of the plate:
+# "top" = MIMI's side (the robot, and the webcam behind the plate), "bottom" = the students' side.
+CAMERA_SIDE = "top"
+BRICK_SPILL_STUDS = 3.5     # longest side spill to scan for beyond a brick
+BLACK_MAX_VALUE = 35        # darker than this (HSV value) = a black brick; measured: black 11, dark green 62
 CELL_MAX_COLOR_DIST = 40.0  # farther than this from every calibrated color = unknown cell
 FRAMES_THAT_MUST_AGREE = 2
 

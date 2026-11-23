@@ -54,6 +54,15 @@ def load_colors():
     return dict(DEFAULT_COLORS)
 
 
+def hsv_center(values, axis):
+    """Typical HSV of a set of OpenCV HSV pixels: median saturation and value, and the CIRCULAR mean hue.
+    Hue wraps around (179 and 0 are both red), so a plain median of red pixels can land near 90 (green)."""
+    values = np.asarray(values, dtype=float)
+    angle = values[..., 0] * (np.pi / 90.0)  # OpenCV hue 0-179 -> 0-2pi
+    hue = (np.degrees(np.arctan2(np.sin(angle).mean(axis=axis), np.cos(angle).mean(axis=axis))) / 2.0) % 180.0
+    return np.stack([hue, np.median(values[..., 1], axis=axis), np.median(values[..., 2], axis=axis)], axis=-1)
+
+
 def stud_to_px(x, y):
     m, p = C.CANVAS_MARGIN_STUDS, C.PX_PER_STUD
     return (x + m) * p, (y + m) * p
@@ -92,6 +101,50 @@ class PlateReader:
             return None, False
         return cv2.warpPerspective(frame, H, self.canvas_size), ok
 
+    def column_runs(self, hsv, col):
+        """Bricks seen in one beat column of the flattened image, as [(lane, top-face HSV, run length in studs)].
+        The camera sees each brick at an angle, so its color spills over the cells beyond it (away from the
+        camera). The run's end nearest the camera is the brick's cell; its far end is the brick's top face."""
+        p, lanes, spl = C.PX_PER_STUD, len(C.PITCHES), C.STUDS_PER_LANE
+        grid_top, grid_bottom = C.GRID_Y0, C.GRID_Y0 + lanes * spl
+        from_top = C.CAMERA_SIDE == "top"
+        y_lo = grid_top - 0.5 if from_top else grid_top - C.BRICK_SPILL_STUDS
+        y_hi = grid_bottom + C.BRICK_SPILL_STUDS if from_top else grid_bottom + 0.5
+        x = C.GRID_X0 + col * C.STUDS_PER_BEAT
+        (x0, y0), (x1, y1) = stud_to_px(x + 0.3, y_lo), stud_to_px(x + 0.7 * C.STUDS_PER_BEAT, y_hi)
+        rows = hsv_center(hsv[int(y0):int(y1), int(x0):int(x1)], axis=1)  # one HSV per pixel row
+        filled = (rows[:, 1] >= C.CELL_MIN_COLOR_SAT) | (rows[:, 2] < C.BLACK_MAX_VALUE)
+        # bridge tiny gaps (stud shadows, seams), then cut into runs
+        gap = max(1, int(0.15 * p))
+        for i in range(1, len(filled) - gap):
+            if not filled[i] and filled[i - 1] and filled[i:i + gap + 1].any():
+                filled[i] = True
+        runs, start = [], None
+        for i, f in enumerate(np.append(filled, False)):
+            if f and start is None:
+                start = i
+            elif not f and start is not None:
+                runs.append((start, i))
+                start = None
+        found = []
+        for start, end in runs:
+            length = (end - start) / p
+            if length < 0.5:
+                continue
+            near = y_lo + (start if from_top else end - spl * p) / p  # top edge of the brick's cell
+            k = int(round(near - grid_top - 0.2))                      # cell rows from the top of the grid
+            lane = lanes - 1 - k // spl if 0 <= k < lanes * spl else None
+            if lane is None:
+                continue
+            # the top face, staying clear of the brick's far edge and the shadow beyond it
+            edge = max(1, int(0.2 * p))
+            if from_top:
+                face = rows[max(start, end - p - edge):max(start + 1, end - edge)]
+            else:
+                face = rows[min(start + edge, end - 1):min(end, start + p + edge)]
+            found.append((lane, hsv_center(face, axis=0), length))
+        return found
+
     # ------------------------------------------------------------ cells
 
     def _patch(self, hsv, x, y, w=1, h=1):
@@ -101,7 +154,7 @@ class PlateReader:
         x0, y0 = int(x0 + 0.25 * p), int(y0 + 0.25 * p)
         x1, y1 = int(x0 + (w - 0.5) * p), int(y0 + (h - 0.5) * p)
         region = hsv[y0:y1, x0:x1].reshape(-1, 3)
-        return np.median(region, axis=0) if len(region) else np.zeros(3)
+        return hsv_center(region, axis=0) if len(region) else np.zeros(3)
 
     def classify(self, hsv_value):
         """(label, distance) for one cell. Distance is 0 for clear empty/black cells.
@@ -124,27 +177,32 @@ class PlateReader:
             return UNKNOWN, best_d
         return best, best_d
 
-    def cell_grid(self, warped):
-        """labels[lane][beat_column] for the whole note grid."""
+    def cell_grid(self, warped, frame=None):
+        """labels[lane][beat_column] for the whole note grid, from the color runs in each beat column."""
         hsv = cv2.cvtColor(warped, cv2.COLOR_BGR2HSV)
         lanes = len(C.PITCHES)
         columns = C.MEASURES * C.BEATS_PER_MEASURE
         labels = [[EMPTY] * columns for _ in range(lanes)]
         bad = [[False] * columns for _ in range(lanes)]
-        for lane in range(lanes):
-            top = C.GRID_Y0 + (lanes - 1 - lane) * C.STUDS_PER_LANE
-            for col in range(columns):
-                x = C.GRID_X0 + col * C.STUDS_PER_BEAT
-                rows = [self.classify(self._patch(hsv, x, top + r, C.STUDS_PER_BEAT, 1))[0]
-                        for r in range(C.STUDS_PER_LANE)]
-                colored = [r for r in rows if r not in (EMPTY,)]
-                if not colored:
-                    continue
-                label = colored[0]
-                # a real brick fills the whole 2-stud lane with one color
-                bad[lane][col] = len(colored) != len(rows) or len(set(rows)) > 1 or label in (UNKNOWN, DARK)
+        longest = C.STUDS_PER_LANE + C.BRICK_SPILL_STUDS
+        for col in range(columns):
+            for lane, face, length in self.column_runs(hsv, col):
+                label = self.classify(face)[0]
+                if label == EMPTY:  # a colored side with a washed-out top: still a brick, color unknown
+                    label = UNKNOWN
                 labels[lane][col] = label
+                # a run much longer than one brick plus its spill = two bricks touching in this column
+                bad[lane][col] = label in (UNKNOWN, DARK) or length > longest
         return labels, bad
+
+    def staircase_faces(self, warped):
+        """Top-face HSV of the calibration staircase (lane i at beat i+1), for calibrate.py colors."""
+        hsv = cv2.cvtColor(warped, cv2.COLOR_BGR2HSV)
+        faces = {}
+        for lane in range(len(C.PITCHES)):
+            runs = [face for run_lane, face, _ in self.column_runs(hsv, lane) if run_lane == lane]
+            faces[lane] = runs[0] if runs else None
+        return faces
 
     # ------------------------------------------------------------ notes
 
@@ -189,15 +247,19 @@ class PlateReader:
         return sorted(set(notes)), max(0.0, clean), sorted(set(issues))
 
     def baton_in_slot(self, warped):
-        """Any brick counts as the baton: the slot is "full" when most of it is colored or dark,
-        unlike the empty white/light-gray slot outline."""
+        """Is the baton in the PLAY slot?
+        Light slot (white outline): any brick counts, when most of the slot is colored or dark.
+        Black pad (PLAY_SLOT_BLACK_PAD): the empty pad is dark, so the baton is any COLORED brick on it."""
         x, y, w, h = C.PLAY_SLOT_STUDS
         x0, y0 = (int(v) for v in stud_to_px(x, y))
         x1, y1 = (int(v) for v in stud_to_px(x + w, y + h))
         region = cv2.cvtColor(warped[y0:y1, x0:x1], cv2.COLOR_BGR2HSV)
         if region.size == 0:
             return False
-        filled = (region[..., 1] >= C.CELL_MIN_COLOR_SAT) | (region[..., 2] < C.BLACK_MAX_VALUE)
+        colored = (region[..., 1] >= C.CELL_MIN_COLOR_SAT) & (region[..., 2] >= C.BLACK_MAX_VALUE)
+        if C.PLAY_SLOT_BLACK_PAD:
+            return float(colored.mean()) >= C.BATON_ON_PAD_FRACTION
+        filled = colored | (region[..., 2] < C.BLACK_MAX_VALUE)
         return float(filled.mean()) >= C.BATON_FILL_FRACTION
 
     # ------------------------------------------------------------ public
@@ -207,7 +269,7 @@ class PlateReader:
         warped, markers_ok = self.warp(frame)
         if warped is None:
             return PlateRead(issues=["plate markers not found"])
-        labels, bad = self.cell_grid(warped)
+        labels, bad = self.cell_grid(warped, frame)
         notes, confidence, issues = self.notes_from_cells(labels, bad, measures)
         moving = False
         if previous_warped is not None:

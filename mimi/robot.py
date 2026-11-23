@@ -50,8 +50,14 @@ def connect(dry_run=False, plate_image=None, sim=False, webcam=None):
         return FakeMini(plate_image, webcam)
     from reachy_mini import ReachyMini
     if sim:
-        mini = SimMini(ReachyMini(host="localhost", connection_mode="localhost_only", media_backend="no_media",
-                                  automatic_body_yaw=False), plate_image, webcam)
+        try:
+            sim_robot = ReachyMini(host="localhost", connection_mode="localhost_only", media_backend="no_media",
+                                   automatic_body_yaw=False)
+        except ConnectionError:
+            raise SystemExit("The simulator is not running. In a second terminal (venv active) run:\n"
+                             "    reachy-mini-daemon --sim --no-media\n"
+                             "wait for its window to open, then run this again. Or use --dry-run instead of --sim.")
+        mini = SimMini(sim_robot, plate_image, webcam)
     else:
         mini = ReachyMini(host=C.ROBOT_IP, connection_mode="network", media_backend="default",
                           automatic_body_yaw=False)  # MIMI turns its body to seats on purpose
@@ -327,35 +333,80 @@ class _FakeMedia:
         self.plate_image = plate_image
         self.webcam = webcam
         self._capture = None
+        self._latest = None
+        self._error = None
+        self._lock = threading.Lock()
+        if webcam is not None:
+            # The camera gets its own thread, which opens it and keeps reading it. On Windows, opening it on
+            # the main thread failed once the robot SDK and the voice had set up COM there (DirectShow cannot
+            # start in that thread). A camera read continuously also always gives a current image.
+            opened = threading.Event()
+            threading.Thread(target=self._camera_thread, args=(opened,), daemon=True).start()
+            opened.wait(30)
+            if self._error:
+                raise SystemExit(self._error)
+
+    def _camera_thread(self, opened):
+        try:
+            self._capture = open_webcam(self.webcam)
+        except SystemExit as error:
+            self._error = str(error)
+            opened.set()
+            return
+        opened.set()
+        while True:
+            ok, frame = self._capture.read()
+            if ok:
+                with self._lock:
+                    self._latest = frame
+            else:
+                time.sleep(0.05)
 
     def get_frame(self):
         import cv2
         if self.webcam is not None:
-            return webcam_frame(self)
+            for _ in range(40):  # up to 2 s for the first frame
+                with self._lock:
+                    if self._latest is not None:
+                        return self._latest.copy()
+                time.sleep(0.05)
+            return None
         if self.plate_image:
             return cv2.imread(self.plate_image)
         return None
 
 
 def open_webcam(index):
-    """The laptop camera at full resolution (more pixels per stud)."""
+    """A laptop or USB camera at the highest resolution it supports (more pixels per stud).
+    Index 0 is usually the built-in camera, 1 a USB webcam."""
     import cv2
-    capture = cv2.VideoCapture(index, cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY)
-    capture.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-    capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
-    if not capture.isOpened():
-        raise SystemExit(f"Could not open camera {index}. Try --webcam 1, or close other apps using the camera.")
-    for _ in range(10):  # first frames are dark while the exposure settles
-        capture.read()
-    return capture
+    api = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
+    # Largest first. 1280 x 960 before 1280 x 720: on a 4:3 camera like the Logitech C270, 720 is a crop of
+    # the full picture and can cut off the markers.
+    for size in ((1920, 1080), (1280, 960), (1280, 720), None):
+        capture = cv2.VideoCapture(index, api)
+        for _ in range(5):  # another program may be releasing the camera: retry for a few seconds
+            if capture.isOpened():
+                break
+            time.sleep(1.0)
+            capture = cv2.VideoCapture(index, api)
+        if not capture.isOpened():
+            raise SystemExit(f"Could not open camera {index}. Close other programs using it (another "
+                             "calibrate.py or run_mimi.py, Zoom, Teams, the Camera app), or try another --webcam number.")
+        if size:
+            capture.set(cv2.CAP_PROP_FRAME_WIDTH, size[0])
+            capture.set(cv2.CAP_PROP_FRAME_HEIGHT, size[1])
+        ok = False
+        for _ in range(10):  # first frames are dark while the exposure settles
+            ok, frame = capture.read()
+        if ok and size and (frame.shape[1], frame.shape[0]) != size and size != (1920, 1080):
+            ok = False  # the camera silently gave another size (e.g. 720 for 960): try the next one
+        if ok:
+            print(f"camera {index}: {frame.shape[1]} x {frame.shape[0]}")
+            return capture
+        capture.release()
+    raise SystemExit(f"Camera {index} opens but sends no image. Try another --webcam number.")
 
-
-def webcam_frame(media):
-    if media._capture is None:
-        media._capture = open_webcam(media.webcam)
-    media._capture.grab()  # drop the buffered frame so the image is current
-    ok, frame = media._capture.read()
-    return frame if ok else None
 
 
 class SimMini:

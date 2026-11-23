@@ -6,6 +6,7 @@
     python calibrate.py test            # read the plate 3 times and print the notes (the "3 test plates")
     python calibrate.py test --image photo.jpg   # same, offline from a photo
     python calibrate.py view --webcam            # any of the above with the laptop camera (no robot)
+    python calibrate.py preview --webcam         # live camera window: found markers outlined, q to quit
 
 Calibration staircase for `colors`: put one 1x1 brick of each color in its own lane, lane i at
 beat i+1 of the plate (low C red on beat 1, D orange on beat 2, ... high C black on beat 8).
@@ -50,9 +51,44 @@ def frame_source(args):
     return next_robot_frame, body
 
 
+def live_preview(next_frame, reader):
+    """Live camera window to aim the camera: markers outlined in green, status line on top.
+    q / Esc quits, s saves calib_raw.jpg."""
+    print("Live preview: q or Esc to quit, s to save the frame. Aim until it says 'all 4 markers'.")
+    while True:
+        frame = next_frame()
+        if frame is None:
+            print("Camera stopped sending frames.")
+            break
+        shown = frame.copy()
+        corners, ids, _ = reader.detector.detectMarkers(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
+        found = sorted(int(i) for i in ids.flatten()) if ids is not None else []
+        if ids is not None:
+            cv2.aruco.drawDetectedMarkers(shown, corners, ids, (0, 255, 0))
+        wanted = sorted(C.MARKER_CENTERS_STUDS)
+        missing = [i for i in wanted if i not in found]
+        if frame.mean() < 15:
+            status, color = "IMAGE IS BLACK: open the camera shutter / camera key", (0, 0, 255)
+        elif not missing:
+            status, color = "all 4 markers found", (0, 200, 0)
+        else:
+            status, color = f"missing marker id {', '.join(map(str, missing))}", (0, 0, 255)
+        cv2.rectangle(shown, (0, 0), (shown.shape[1], 60), (255, 255, 255), -1)
+        cv2.putText(shown, status, (20, 42), cv2.FONT_HERSHEY_SIMPLEX, 1.3, color, 3)
+        scale = 960 / shown.shape[1]
+        cv2.imshow("MIMI camera (q to quit, s to save)", cv2.resize(shown, None, fx=scale, fy=scale))
+        key = cv2.waitKey(30) & 0xFF
+        if key in (ord("q"), 27):
+            break
+        if key == ord("s"):
+            cv2.imwrite("calib_raw.jpg", frame)
+            print("saved calib_raw.jpg")
+    cv2.destroyAllWindows()
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("what", choices=["view", "colors", "test"])
+    parser.add_argument("what", choices=["preview", "view", "colors", "test"])
     parser.add_argument("--listen", action="store_true", help="use the LISTEN head pose instead of READ")
     parser.add_argument("--image", help="use a saved photo instead of the robot camera")
     parser.add_argument("--webcam", nargs="?", const=0, type=int, metavar="INDEX",
@@ -63,9 +99,13 @@ def main():
     frame = next_frame()
     if frame is None:
         raise SystemExit("No camera frame.")
+    if frame.mean() < 15:
+        print("The camera image is almost black: open the privacy shutter / camera key, or point it at the plate.")
     reader = PlateReader()
     try:
-        if args.what == "view":
+        if args.what == "preview":
+            live_preview(next_frame, reader)
+        elif args.what == "view":
             cv2.imwrite("calib_raw.jpg", frame)
             warped, ok = reader.warp(frame)
             print("all 4 markers found" if ok else "NOT all markers found: move the head or the plate")
@@ -79,12 +119,13 @@ def main():
             warped, ok = reader.warp(frame)
             if not ok:
                 raise SystemExit("Need all 4 markers for color calibration.")
-            hsv = cv2.cvtColor(warped, cv2.COLOR_BGR2HSV)
+            faces = reader.staircase_faces(warped)  # the bricks' top faces, not their shaded sides
             colors = {}
             for lane, name in enumerate(C.LANE_COLORS):
-                top = C.GRID_Y0 + (len(C.PITCHES) - 1 - lane) * C.STUDS_PER_LANE
-                value = reader._patch(hsv, C.GRID_X0 + lane, top, 1, C.STUDS_PER_LANE)
-                colors[name] = [int(v) for v in value]
+                if faces[lane] is None:
+                    raise SystemExit(f"No brick found for {name} (lane {C.PITCHES[lane]}, beat {lane + 1}). "
+                                     "Check the staircase in calib_rectified.jpg from `calibrate.py view`.")
+                colors[name] = [int(v) for v in faces[lane]]
                 print(f"  {name:11s} lane {C.PITCHES[lane]}: HSV {colors[name]}")
                 if name != "black" and colors[name][2] < C.BLACK_MAX_VALUE + 20:
                     print(f"    <- {name} is almost as dark as black: add light, or it may be read as black")
