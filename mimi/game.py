@@ -11,7 +11,7 @@ import random
 import time
 
 from . import config as C
-from .dialogue import TUTORIAL_STEPS, PendingHint, color_hint, line
+from .dialogue import TUTORIAL_STEPS, PendingHint, brick_suggestion, color_hint, line
 from .music import compare, in_measure, melody, parse_wizard_notes, synthesize, to_text
 from .plate_reader import PlateRead, PlateReader, annotate, vlm_second_opinion
 from .robot import Body, Speaker, connect
@@ -303,8 +303,13 @@ class Game:
             else:
                 self.body.look_at_group()
                 self.say(line("mismatch_group"))
-            hint, source, raw, latency = pending.result()
-            self.log.event("hint", text=hint, source=source, raw=raw, llm_latency_s=latency)
+            if playbacks >= C.SUGGEST_BRICK_FROM_TRY:  # still stuck: name the brick that belongs there
+                hint = brick_suggestion(diff, self.condition)
+                self.log.event("hint", text=hint, source="brick_suggestion", try_number=playbacks)
+            else:
+                hint, source, raw, latency = pending.result()
+                self.log.event("hint", text=hint, source=source, raw=raw, llm_latency_s=latency,
+                               try_number=playbacks)
             self.say(hint)
             self.body.look_at_group()
             if playbacks >= C.MAX_PLAYBACKS:

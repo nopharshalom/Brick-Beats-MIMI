@@ -18,6 +18,9 @@ REPLAY_TARGET_AFTER_MISMATCH = True  # play MIMI's melody once more after a mism
 # Fading color hints, said after the first playback of MIMI's melody, so pure listening is the last step:
 #   "all"   every brick's color (and "long" for longer notes), "first"  only the first brick, "none"  by ear
 COLOR_HINTS = {1: "all", 2: "first", 3: "none"}
+# When the team is stuck: from this wrong try on (1 = the first mismatch), MIMI names the brick that
+# belongs at the first different beat ("try a long red brick on beat 3") instead of a listening hint.
+SUGGEST_BRICK_FROM_TRY = 2
 
 # ---------------------------------------------------------------- music
 # Pitch lanes from the bottom of the plate (lane 0) to the top (lane 7). Fig. 1b.

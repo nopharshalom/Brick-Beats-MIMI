@@ -45,6 +45,10 @@ SCRIPT = {
     "lost": "Good try! Let me show you my melody.",
     "lost_answer": "Beat {beat} was a {color} {duration} note.",
     "lost_rest": "Beat {beat} should be quiet.",
+    "suggest_directed": "Here is a tip: try {brick} brick on beat {beat}.",
+    "suggest_group": "Here is a tip: one spot needs {brick} brick.",
+    "suggest_quiet_directed": "Here is a tip: beat {beat} should be quiet.",
+    "suggest_quiet_group": "Here is a tip: one spot should be quiet.",
     "finale_intro": "Time for the finale! Here is your symphony.",
     "win": "{stars} stars! You are Orchestra Graduates!",
     "lose": "{stars} star{s}. Great playing, orchestra! Practice makes music.",
@@ -65,6 +69,23 @@ def line(key, **kwargs):
 
 
 LENGTH_WORDS = {1: "", 2: "long ", 3: "longer ", 4: "very long "}  # brick length, said before the color
+
+
+def a_brick(beats, lane):
+    """'a yellow', 'a long red', 'an orange' - the brick named the way MIMI says it."""
+    words = LENGTH_WORDS.get(beats, "") + C.LANE_COLORS[lane]
+    return ("an " if words[0] in "aeiou" else "a ") + words
+
+
+def brick_suggestion(diff, condition):
+    """When the team is stuck: name the brick that belongs at the first different beat. In the GROUP
+    condition the beat is not named, so the two RQ1 conditions still differ only in where feedback goes."""
+    if diff.target is None:  # an extra note: that beat should be silent
+        return line("suggest_quiet_directed", beat=diff.beat) if condition == "directed" else line("suggest_quiet_group")
+    brick = a_brick(diff.target.beats, diff.target.lane)
+    if condition == "directed":
+        return line("suggest_directed", brick=brick, beat=diff.beat)
+    return line("suggest_group", brick=brick)
 
 
 def color_hint(target, round_number):
@@ -92,6 +113,11 @@ def all_scripted_lines():
     lines += [line("lose", stars=s, s="" if s == 1 else "s") for s in (0, 1)]
     for b in (1, 2, 3, 4):
         lines.append(line("lost_rest", beat=b))
+        lines.append(line("suggest_quiet_directed", beat=b))
+        for lane in range(len(C.PITCHES)):
+            for beats in C.DURATION_WORDS:
+                lines.append(line("suggest_directed", brick=a_brick(beats, lane), beat=b))
+                lines.append(line("suggest_group", brick=a_brick(beats, lane)))
         for lane in range(len(C.PITCHES)):
             for d in C.DURATION_WORDS.values():
                 lines.append(line("lost_answer", beat=b, color=C.LANE_COLORS[lane], duration=d))
