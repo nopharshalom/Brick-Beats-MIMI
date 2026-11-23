@@ -5,8 +5,9 @@
     python calibrate.py colors          # fit HSV centers from the calibration staircase -> calibration.json
     python calibrate.py test            # read the plate 3 times and print the notes (the "3 test plates")
     python calibrate.py test --image photo.jpg   # same, offline from a photo
+    python calibrate.py view --webcam            # any of the above with the laptop camera (no robot)
 
-Calibration staircase for `colors`: put one SHORT (1x2) brick of each color in its own lane, lane i at
+Calibration staircase for `colors`: put one 1x1 brick of each color in its own lane, lane i at
 beat i+1 of the plate (low C red on beat 1, D orange on beat 2, ... high C black on beat 8).
 Tune READ_PITCH / LISTEN_PITCH / GRID_* / PLAY_SLOT_STUDS in mimi/config.py until the outputs look right.
 """
@@ -21,20 +22,32 @@ from mimi.music import to_text
 from mimi.plate_reader import CALIBRATION_FILE, PlateReader, annotate
 
 
-def grab(args):
+def frame_source(args):
+    """(function returning the next frame, Body or None). Robot camera by default."""
     if args.image:
-        return cv2.imread(args.image), None
+        return (lambda: cv2.imread(args.image)), None
+    if args.webcam is not None:
+        from mimi.robot import open_webcam
+        capture = open_webcam(args.webcam)
+
+        def next_webcam_frame():
+            capture.grab()
+            ok, frame = capture.read()
+            return frame if ok else None
+        return next_webcam_frame, None
     from mimi.robot import Body, connect
     mini = connect()
     body = Body(mini)
     body.listening_tilt() if args.listen else body.reading_look()
     body.set_mode("still")
-    frame = None
-    for _ in range(80):
-        frame = mini.media.get_frame()
-        if frame is not None:
-            break
-    return frame, body
+
+    def next_robot_frame():
+        for _ in range(80):
+            frame = mini.media.get_frame()
+            if frame is not None:
+                return frame
+        return None
+    return next_robot_frame, body
 
 
 def main():
@@ -42,9 +55,12 @@ def main():
     parser.add_argument("what", choices=["view", "colors", "test"])
     parser.add_argument("--listen", action="store_true", help="use the LISTEN head pose instead of READ")
     parser.add_argument("--image", help="use a saved photo instead of the robot camera")
+    parser.add_argument("--webcam", nargs="?", const=0, type=int, metavar="INDEX",
+                        help="use the laptop camera (default 0) instead of the robot camera")
     args = parser.parse_args()
 
-    frame, body = grab(args)
+    next_frame, body = frame_source(args)
+    frame = next_frame()
     if frame is None:
         raise SystemExit("No camera frame.")
     reader = PlateReader()
@@ -86,7 +102,7 @@ def main():
         else:  # test
             previous = None
             for i in range(3):
-                read = reader.read(frame if args.image else body.mini.media.get_frame(), list(range(C.MEASURES)), previous)
+                read = reader.read(frame if i == 0 else next_frame(), list(range(C.MEASURES)), previous)
                 previous = read.warped
                 print(f"read {i + 1}: conf {read.confidence:.2f}  hand/moving={read.hand_in_way}  baton={read.baton}")
                 for m in range(C.MEASURES):

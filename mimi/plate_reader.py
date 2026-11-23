@@ -171,10 +171,7 @@ class PlateReader:
                         for c in range(col, end + 1):
                             bad[lane][c] = True
                     # bricks are 1, 2 or 4 studs long; a run of 3 is two same-colored bricks side by side
-                    parts = {1: [1], 2: [2], 3: [2, 1], 4: [4]}[length]
-                    if length == 3:
-                        issues.append(f"3-beat run in {C.PITCHES[lane]} lane: guessing half + quarter")
-                        bad[lane][col] = True
+                    parts = {1: [1], 2: [2], 3: [3], 4: [4]}[length]  # one brick per run (1x1 ... 1x4)
                     start = col
                     for beats in parts:
                         notes.append(Note(start, lane, beats))
@@ -243,7 +240,7 @@ def annotate(warped, notes=(), active_measure=None):
         if col < cols:
             cv2.putText(img, str(col % C.BEATS_PER_MEASURE + 1), (x + 4, y0 - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1)
     for lane in range(lanes):
-        y = y0 + (lanes - 1 - lane) * C.STUDS_PER_LANE * p + p + 5
+        y = y0 + (lanes - 1 - lane) * C.STUDS_PER_LANE * p + C.STUDS_PER_LANE * p // 2 + 5
         cv2.putText(img, C.PITCHES[lane], (x0 - 34, y), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 1)
     if active_measure is not None:
         ax = x0 + active_measure * C.BEATS_PER_MEASURE * p
@@ -262,7 +259,7 @@ def vlm_second_opinion(warped, measure):
         "This is a top-down photo of a LEGO music board. The grid has 8 rows (pitch lanes), labelled on "
         f"the left from bottom to top: {pitch_list}. Columns are beats, numbered 1-4 in each measure; "
         "thick lines separate measures. A brick's length is its duration: 1 column = 1 beat, "
-        "2 columns = 2 beats, 4 columns = 4 beats. Ignore hands, shadows and anything outside the grid.\n"
+        "2 columns = 2 beats, 3 columns = 3 beats, 4 columns = 4 beats. Ignore hands, shadows and anything outside the grid.\n"
         f"Read ONLY the measure outlined in magenta (measure {measure + 1}).\n"
         'Reply with only JSON: {"notes": [{"pitch": "E4", "beat": 1, "beats": 1}, ...]} '
         "listing every brick in that measure from left to right; empty list if there are none.")
@@ -283,7 +280,7 @@ def vlm_second_opinion(warped, measure):
             beat, beats = int(item["beat"]), int(item["beats"])
         except (KeyError, TypeError, ValueError):
             return None
-        if pitch is None or not 1 <= beat <= C.BEATS_PER_MEASURE or beats not in (1, 2, 4):
+        if pitch is None or not 1 <= beat <= C.BEATS_PER_MEASURE or beats not in C.DURATION_WORDS:
             return None
         notes.append(Note(measure * C.BEATS_PER_MEASURE + beat - 1, C.PITCHES.index(pitch), beats))
     return sorted(notes)

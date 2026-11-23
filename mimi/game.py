@@ -32,9 +32,10 @@ class Game:
         self.args = args
         self.condition = args.condition
         self.log = SessionLog(args.session, args.condition)
-        self.mini = connect(args.dry_run, args.plate_image)
-        self.body = Body(self.mini, args.dry_run)
-        self.speaker = Speaker(self.mini, args.dry_run)
+        self.mini = connect(args.dry_run, args.plate_image, args.sim, args.webcam)
+        laptop_media = args.dry_run or args.sim  # frames from --plate-image, sound on the laptop, no mic
+        self.body = Body(self.mini, laptop_media)
+        self.speaker = Speaker(self.mini, laptop_media)
         # one reader per head pose: the homography is only valid for the pose it was found in
         self.readers = {"read": PlateReader(), "listen": PlateReader()}
         self.wizard = Wizard(self.log)

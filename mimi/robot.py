@@ -42,12 +42,19 @@ class Pose:
 
 # ---------------------------------------------------------------- connection
 
-def connect(dry_run=False, plate_image=None):
+def connect(dry_run=False, plate_image=None, sim=False, webcam=None):
+    """The real robot; --sim: the MuJoCo simulator on this laptop (`reachy-mini-daemon --sim --no-media`),
+    which moves like the robot while frames come from --webcam or --plate-image and sound plays on the
+    laptop; --dry-run: no robot at all."""
     if dry_run:
-        return FakeMini(plate_image)
+        return FakeMini(plate_image, webcam)
     from reachy_mini import ReachyMini
-    mini = ReachyMini(host=C.ROBOT_IP, connection_mode="network", media_backend="default",
-                      automatic_body_yaw=False)  # MIMI turns its body to seats on purpose
+    if sim:
+        mini = SimMini(ReachyMini(host="localhost", connection_mode="localhost_only", media_backend="no_media",
+                                  automatic_body_yaw=False), plate_image, webcam)
+    else:
+        mini = ReachyMini(host=C.ROBOT_IP, connection_mode="network", media_backend="default",
+                          automatic_body_yaw=False)  # MIMI turns its body to seats on purpose
     mini.enable_motors()
     return mini
 
@@ -314,21 +321,59 @@ def _laptop_play_file(path):
 # ---------------------------------------------------------------- dry run (no robot)
 
 class _FakeMedia:
-    def __init__(self, plate_image):
+    """Frames for --dry-run / --sim: the laptop camera (--webcam), a photo (--plate-image), or none."""
+
+    def __init__(self, plate_image=None, webcam=None):
         self.plate_image = plate_image
+        self.webcam = webcam
+        self._capture = None
 
     def get_frame(self):
+        import cv2
+        if self.webcam is not None:
+            return webcam_frame(self)
         if self.plate_image:
-            import cv2
             return cv2.imread(self.plate_image)
         return None
+
+
+def open_webcam(index):
+    """The laptop camera at full resolution (more pixels per stud)."""
+    import cv2
+    capture = cv2.VideoCapture(index, cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY)
+    capture.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+    capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+    if not capture.isOpened():
+        raise SystemExit(f"Could not open camera {index}. Try --webcam 1, or close other apps using the camera.")
+    for _ in range(10):  # first frames are dark while the exposure settles
+        capture.read()
+    return capture
+
+
+def webcam_frame(media):
+    if media._capture is None:
+        media._capture = open_webcam(media.webcam)
+    media._capture.grab()  # drop the buffered frame so the image is current
+    ok, frame = media._capture.read()
+    return frame if ok else None
+
+
+class SimMini:
+    """--sim: the simulated robot's motion, with frames from --plate-image (the sim scene has no plate)."""
+
+    def __init__(self, mini, plate_image=None, webcam=None):
+        self._mini = mini
+        self.media = _FakeMedia(plate_image, webcam)
+
+    def __getattr__(self, name):  # motion and every other SDK call go to the simulator
+        return getattr(self._mini, name)
 
 
 class FakeMini:
     """Stands in for ReachyMini with --dry-run: no motion, frames from --plate-image, sound on the laptop."""
 
-    def __init__(self, plate_image=None):
-        self.media = _FakeMedia(plate_image)
+    def __init__(self, plate_image=None, webcam=None):
+        self.media = _FakeMedia(plate_image, webcam)
 
     def goto_target(self, **kwargs):
         time.sleep(min(kwargs.get("duration", 0.5), 0.3))

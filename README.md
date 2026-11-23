@@ -70,7 +70,7 @@ Set `ROBOT_IP` in `mimi/config.py`.
      Tune `READ_PITCH` and `GRID_X0/GRID_Y0` in `mimi/config.py` until they do.
    - `python calibrate.py view --listen` checks the PLAY slot is still visible at the listening pose
      (`LISTEN_PITCH`, `PLAY_SLOT_STUDS`).
-   - Build the color staircase (one short brick per color, lane *i* on beat *i+1*), then run
+   - Build the color staircase (one 1×1 brick per color, lane *i* on beat *i+1*), then run
      `python calibrate.py colors` to write `calibration.json`.
    - Build each of the 3 test plates and run `python calibrate.py test`.
    - Check `SEAT_YAW` by watching MIMI turn to each seat (use `--start round1` and a wrong build).
@@ -106,6 +106,29 @@ python run_mimi.py --session T --condition directed --dry-run --plate-image test
 In a dry run there is no motion, and the notes play on the laptop. Press `p` to request a playback.
 Leave out `--plate-image` to type every read with `c`.
 
+### In the simulator
+
+The SDK's MuJoCo simulator shows MIMI's motion (looking down, turning to seats, the beat bob) without
+the robot. Install it once, then start it in its own terminal and leave it running:
+
+```bash
+pip install "reachy-mini[mujoco]==1.11.0"
+```
+
+```bash
+reachy-mini-daemon --sim --no-media
+```
+
+In a second terminal:
+
+```bash
+python run_mimi.py --session SIM --condition directed --sim --plate-image test_plate.jpg
+```
+
+The simulated robot moves in the MuJoCo window. The sim scene has no plate, so the camera frames come
+from `--plate-image`, sound plays on the laptop, and turning toward voices is off. The simulator log may
+say "Backend is not ready after 2 seconds" while the window opens; it still works.
+
 ## Design choices we made while coding (check these against the proposal)
 
 - **The 60 s round clock only runs while students build.** It pauses while MIMI reads, talks or plays,
@@ -127,6 +150,6 @@ Leave out `--plate-image` to type every read with `c`.
   calls have not run on hardware yet:** `push_audio_sample` notes, DoA from `/api/state/doa`,
   `start_head_tracking`, body yaw. The signs in `SEAT_YAW` and the DoA→yaw mapping also need checking on the robot.
 - Two same-colored bricks side by side look like one long brick to the camera. The melody bank avoids
-  repeated neighbouring pitches for this reason. A 3-beat run is read as half + quarter and flagged as low confidence.
+  repeated neighbouring pitches for this reason. A run of color is read as one brick (1×1 to 1×4).
 - A hand is detected only when it hides a marker or moves between the two frames. A hand held still
   over the plate shows up as unknown cells, which lower the confidence and send the read to the VLM.

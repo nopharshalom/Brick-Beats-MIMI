@@ -97,7 +97,7 @@ def panel_setting(ax):
 def panel_staff(ax):
     """(b) Plate-as-staff mapping: lanes, beats, measures, example bricks."""
     lanes, beats = len(C.PITCHES), C.MEASURES * C.BEATS_PER_MEASURE
-    lane_h = 2  # studs
+    lane_h = C.STUDS_PER_LANE
     ax.set_xlim(-3.2, beats + 0.4)
     ax.set_ylim(lanes * lane_h + 11.5, -2.6)
     ax.set_aspect("equal")
@@ -123,9 +123,9 @@ def panel_staff(ax):
     names = ", ".join(C.LANE_COLORS)
     split = names.index(", ", len(names) // 2) + 2
     ax.text(0, lanes * lane_h + 1.6,
-            f"Row = pitch (2 studs tall). Color = pitch:\n{names[:split]}\n{names[split:]}.\n"
-            "Brick length = duration: 1 stud quarter (1 beat),\n"
-            "2 studs half (2 beats), 4 studs whole (4 beats).\n"
+            f"Row = pitch (1 stud tall). Color = pitch:\n{names[:split]}\n{names[split:]}.\n"
+            "Brick length = duration: 1×1 quarter (1 beat), 1×2 half,\n"
+            "1×3 dotted half (3 beats), 1×4 whole (4 beats).\n"
             "Each measure = one round, kept for the finale.",
             fontsize=6.5, color=INK, va="top", linespacing=1.35)
 
@@ -189,7 +189,7 @@ def plate_layout():
     ax.text(gx / 2, gy - 1.7, f"{gx} studs", ha="center", fontsize=7.5, color=INK)
     ax.annotate("", xy=(gx + beats + 1.2, 0), xytext=(gx + beats + 1.2, gy), arrowprops=arrow)
     ax.text(gx + beats + 1.7, gy / 2, f"{gy} studs", va="center", fontsize=7.5, color=INK)
-    ax.text(n / 2, gy + lanes * lh + 3.2, f"{beats} beats (1 stud each) × {lanes} lanes (2 studs each)",
+    ax.text(n / 2, gy + lanes * lh + 3.2, f"{beats} beats (1 stud each) × {lanes} lanes (1 stud each)",
             ha="center", fontsize=7.5, color=INK)
     ax.text(n / 2, n - 1.2, f"{n} × {n} studs ({n * 8} mm)", ha="center", fontsize=7.5, color=INK)
     # PLAY slot

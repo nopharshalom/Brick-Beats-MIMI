@@ -24,7 +24,8 @@ PITCH_WORDS = ["low C", "D", "E", "F", "G", "A", "B", "high C"]  # how MIMI says
 LANE_COLORS = ["red", "orange", "yellow", "light green", "dark green", "light blue", "dark blue", "black"]
 BEATS_PER_MEASURE = 4
 MEASURES = 4               # tutorial + 3 Echo rounds, kept on the plate for the finale
-DURATION_WORDS = {1: "quarter", 2: "half", 4: "whole"}
+# Bricks are 1 stud wide and 1-4 studs long: brick length in studs = beats.
+DURATION_WORDS = {1: "quarter", 2: "half", 3: "dotted half", 4: "whole"}
 
 # Target melodies. Each note is (lane, start_beat, beats) inside one 4-beat measure, start_beat 0-3.
 # Avoid two neighbouring notes with the same pitch: same-colored bricks side by side look like one
@@ -41,8 +42,9 @@ MELODY_BANK = {
         [(0, 0, 2), (2, 2, 1), (4, 3, 1)],
         [(3, 0, 1), (4, 1, 1), (5, 2, 2)],
     ],
-    3: [  # Round 3: a whole note, or a leap
+    3: [  # Round 3: a whole note, a dotted half, or a leap
         [(4, 0, 4)],
+        [(2, 0, 3), (4, 3, 1)],
         [(0, 0, 1), (4, 1, 1), (2, 2, 2)],
         [(7, 0, 2), (4, 2, 1), (0, 3, 1)],
     ],
@@ -60,14 +62,15 @@ MARKER_CENTERS_STUDS = {0: (-2.5, -2.5), 1: (34.5, -2.5), 2: (34.5, 34.5), 3: (-
 # Warped canvas: the plate plus a margin so the markers and the PLAY slot fit.
 CANVAS_MARGIN_STUDS = 6
 # Note grid: beat 1 of measure 1 starts at GRID_X0, the top of the high-C lane at GRID_Y0.
-# 4 measures x 4 beats = 16 beat columns, 1 stud per beat; 8 lanes x 2 studs = 16 stud rows.
-GRID_X0, GRID_Y0 = 8, 8
+# 4 measures x 4 beats = 16 beat columns, 1 stud per beat; 8 lanes x 1 stud = 8 stud rows (bricks are 1 stud wide).
+# The default centers the 16 x 8 grid on the 32 x 32 plate.
+GRID_X0, GRID_Y0 = 8, 12
 STUDS_PER_BEAT = 1
-STUDS_PER_LANE = 2
+STUDS_PER_LANE = 1
 # PLAY slot where the conductor puts the baton: (x, y, w, h) in studs, may be off the plate.
 # The baton can be ANY brick (black is a pitch color): mark the slot with an outline of white or light-gray
 # tape only, never filled with colored tape, so an empty slot reads as empty.
-PLAY_SLOT_STUDS = (35.5, 14, 2, 4)
+PLAY_SLOT_STUDS = (35.5, 14, 1, 4)  # fits a 1x4 brick (best baton); a 1x2 also counts
 BATON_FILL_FRACTION = 0.5  # share of PLAY-slot pixels that must be colored or dark to count as "baton in"
 
 # ---------------------------------------------------------------- vision thresholds
